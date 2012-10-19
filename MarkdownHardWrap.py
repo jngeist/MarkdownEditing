@@ -40,11 +40,12 @@ class MarkdownWrapLinesCommand(paragraph.WrapLinesCommand):
 
     def run(self, edit, width=0):
         print "Running."
-        if width == 0 and self.view.settings().get("wrap_width"):
-            try:
-                width = int(self.view.settings().get("wrap_width"))
-            except TypeError:
-                pass
+        for key in ["hard_wrap_width", "wrap_width"]:
+            if width == 0 and self.view.settings().get(key):
+                try:
+                    width = int(self.view.settings().get(key))
+                except TypeError:
+                    pass
 
         if width == 0 and self.view.settings().get("rulers"):
             # try and guess the wrap width from the ruler, if any
@@ -57,6 +58,8 @@ class MarkdownWrapLinesCommand(paragraph.WrapLinesCommand):
 
         if width == 0:
             width = 78
+
+        print "Wrapping to: %s" % width
 
         # Make sure tabs are handled as per the current buffer
         tab_width = 8
