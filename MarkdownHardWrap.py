@@ -5,8 +5,32 @@ import string
 import re
 
 
+def get_width(view):
+    width = 0
+    for key in ["hard_wrap_width", "wrap_width"]:
+        if width == 0 and view.settings().get(key):
+            try:
+                width = int(view.settings().get(key))
+            except TypeError:
+                pass
+
+    if width == 0 and view.settings().get("rulers"):
+        # try and guess the wrap width from the ruler, if any
+        try:
+            width = int(view.settings().get("rulers")[0])
+        except ValueError:
+            pass
+        except TypeError:
+            pass
+
+    if width == 0:
+        width = 78
+
+    return width
+
+
 class MarkdownWrapLinesCommand(paragraph.WrapLinesCommand):
-    persistent_prefixes = re.compile("^\s*>\s+")
+    persistent_prefixes = re.compile("^\s*(>\s+)+")
     initial_prefixes = re.compile("^\s*([-*+]|\d+\.)?\s+")
 
     def extract_prefix(self, sr):
@@ -16,21 +40,20 @@ class MarkdownWrapLinesCommand(paragraph.WrapLinesCommand):
             return None
 
         lineone = self.view.substr(lines[0])
-        print "Line one: %s" % lineone
-        persistent_prefix_match = self.persistent_prefixes.match(lineone)
-        initial_prefix_match = self.initial_prefixes.match(lineone)
-        print "Persistent prefix: %s" % persistent_prefix_match
-        print "Initial prefix: %s" % initial_prefix_match
+        prefix_match = self.persistent_prefixes.match(lineone)
+        if prefix_match:
+            prefix_type = 'persistent'
+        else:
+            prefix_match = self.initial_prefixes.match(lineone)
+            prefix_type = 'initial'
 
-        if not initial_prefix_match and not persistent_prefix_match:
+        if not prefix_match:
             return None
 
         prefix = self.view.substr(sublime.Region(lines[0].begin(),
-            lines[0].begin() + initial_prefix_match.end()))
+            lines[0].begin() + prefix_match.end()))
 
-        print "Prefix: %s" % prefix
-
-        if persistent_prefix_match:
+        if prefix_type == 'persistent':
             for line in lines[1:]:
                 if self.view.substr(sublime.Region(line.begin(),
                         line.begin() + len(prefix))) != prefix:
@@ -39,27 +62,7 @@ class MarkdownWrapLinesCommand(paragraph.WrapLinesCommand):
         return (prefix, re.sub('.', ' ', prefix))
 
     def run(self, edit, width=0):
-        print "Running."
-        for key in ["hard_wrap_width", "wrap_width"]:
-            if width == 0 and self.view.settings().get(key):
-                try:
-                    width = int(self.view.settings().get(key))
-                    print "Setting with %s" % key
-                except TypeError:
-                    pass
-
-        if width == 0 and self.view.settings().get("rulers"):
-            # try and guess the wrap width from the ruler, if any
-            try:
-                width = int(self.view.settings().get("rulers")[0])
-            except ValueError:
-                pass
-            except TypeError:
-                pass
-
-        if width == 0:
-            width = 78
-
+        width = get_width(self.view)
         # Make sure tabs are handled as per the current buffer
         tab_width = 8
         if self.view.settings().get("tab_size"):
@@ -113,35 +116,33 @@ class MarkdownWrapLinesCommand(paragraph.WrapLinesCommand):
                 self.view.sel().add(sublime.Region(pt))
 
 
-#class AutoHardWrapLines(sublime_plugin.EventListener):
-#    width = 0
-#
-#    def get_width(self, view):
-#        if self.width:
-#            return self.width
-#        else:
-#            width = 0
-#            if view.settings().get("wrapwidth"):
-#                try:
-#                    width = int(view.settings().get("wrapwidth"))
-#                except TypeError:
-#                    pass
-#
-#            if view.settings().get("rulers"):
-#                # try and guess the wrap width from the ruler, if any
-#                try:
-#                    width = int(view.settings().get("rulers")[0])
-#                except ValueError:
-#                    pass
-#                except TypeError:
-#                    pass
-#
-#            self.width = width or 78
-#            return self.width
-#
-#    def on_modified(self, view):
-#        if "Markdown" in view.settings().get('syntax'):
-#            c = view.rowcol(view.sel()[-1].end())[1]
-#            if c > (self.width or self.get_width(view)):
-#                print "%s > %s" % (c, self.width)
-#                view.run_command('markdown_wrap_lines')
+class AutoHardWrapLines(sublime_plugin.EventListener):
+    TARGET_SETTINGS = ['hard_wrap_lines', 'hard_wrap_width', 'wrap_width', 'ruler']
+    width = 0
+    callback_is_registered = False
+
+    def _add_callback(self, view):
+        s = view.settings()
+        for key in self.TARGET_SETTINGS:
+            s.add_on_change(key, lambda: self._update_width(view))
+
+    def active(self, view):
+        s = view.settings()
+        return (
+            "Markdown" in s.get('syntax') and
+            s.get('hard_wrap_lines')
+        )
+
+    def _update_width(self, view):
+        self.width = get_width(view)
+
+    def on_activated(self, view):
+        if "Markdown" in view.settings().get('syntax'):
+            if not self.callback_is_registered:
+                self._add_callback(view)
+
+    def on_modified(self, view):
+        if self.active(view):
+            c = view.rowcol(view.sel()[-1].end())[1]
+            if c > self.width:
+                view.run_command('markdown_wrap_lines')
