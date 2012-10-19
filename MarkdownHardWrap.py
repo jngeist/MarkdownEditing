@@ -44,6 +44,7 @@ class MarkdownWrapLinesCommand(paragraph.WrapLinesCommand):
             if width == 0 and self.view.settings().get(key):
                 try:
                     width = int(self.view.settings().get(key))
+                    print "Setting with %s" % key
                 except TypeError:
                     pass
 
@@ -58,8 +59,6 @@ class MarkdownWrapLinesCommand(paragraph.WrapLinesCommand):
 
         if width == 0:
             width = 78
-
-        print "Wrapping to: %s" % width
 
         # Make sure tabs are handled as per the current buffer
         tab_width = 8
